@@ -23,21 +23,36 @@ install_from_remote() {
     trap 'rm -rf "$TMP_DIR"' EXIT
 
     REPO_URL="https://github.com/s7887177/eason-jump"
-    TARBALL_URL="$REPO_URL/releases/latest/download/eason-jump.tar.gz"
+    API_URL="https://api.github.com/repos/s7887177/eason-jump/releases/latest"
+
+    # Resolve latest version tag via GitHub API
+    if command -v curl >/dev/null 2>&1; then
+        TAG=$(curl -fsSL "$API_URL" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+    elif command -v wget >/dev/null 2>&1; then
+        TAG=$(wget -qO- "$API_URL" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+    else
+        echo "error: neither 'curl' nor 'wget' found" >&2
+        exit 1
+    fi
+
+    if [ -z "$TAG" ]; then
+        echo "error: could not determine latest release version" >&2
+        exit 1
+    fi
+
+    TARBALL_URL="$REPO_URL/releases/download/$TAG/eason-jump_${TAG}.tar.gz"
+    echo "install: downloading $TAG..."
 
     if command -v curl >/dev/null 2>&1; then
         curl -fsSL "$TARBALL_URL" -o "$TMP_DIR/eason-jump.tar.gz" || {
             echo "error: could not download release from $TARBALL_URL" >&2
             exit 1
         }
-    elif command -v wget >/dev/null 2>&1; then
+    else
         wget -q "$TARBALL_URL" -O "$TMP_DIR/eason-jump.tar.gz" || {
             echo "error: could not download release from $TARBALL_URL" >&2
             exit 1
         }
-    else
-        echo "error: neither 'curl' nor 'wget' found" >&2
-        exit 1
     fi
 
     mkdir -p "$INSTALL_DIR"
