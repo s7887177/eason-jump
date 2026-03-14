@@ -1,0 +1,298 @@
+#!/usr/bin/env sh
+set -e
+
+# Resolve symlinks so SCRIPT_DIR points to the real location
+_self="$0"
+if [ -L "$_self" ]; then
+    _self="$(readlink -f "$_self")"
+fi
+SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
+DATA_DIR="${EASON_JUMP_DATA_DIR:-$HOME/.local/share/eason-jump}"
+SESSIONS_DIR="$DATA_DIR/sessions"
+
+RESERVED_COMMANDS="init deinit jump create ls f b rm activate deactivate history clear uninstall help"
+
+# Source library files
+. "$SCRIPT_DIR/lib/alias.sh"
+. "$SCRIPT_DIR/lib/init.sh"
+. "$SCRIPT_DIR/lib/history.sh"
+
+ensure_data_dir() {
+    mkdir -p "$DATA_DIR"
+    mkdir -p "$SESSIONS_DIR"
+}
+
+usage() {
+    cat <<'EOF'
+eason-jump — quick directory navigation with aliases and history
+
+Usage:
+    j <alias>                     jump to alias
+    j [-g] <alias> <path>         create alias (-g for global)
+    j -g <alias>                  promote session alias to global
+
+Commands:
+    help [COMMAND]       show help, or detailed help for COMMAND
+    jump <alias>         cd to the path of alias
+    create <alias> <path>
+                         save path as alias (session-scoped by default)
+    ls                   list all aliases
+    rm <alias>           remove an alias
+    f                    go forward in history
+    b                    go back in history
+    history              show cd history
+    clear                clear history
+    init                 set up shell integration
+    deinit               remove shell integration
+    activate             start recording history
+    deactivate           stop recording history
+    uninstall            remove eason-jump (keeps data)
+
+Use 'j help COMMAND' for detailed information.
+EOF
+}
+
+cmd_help() {
+    case "${1:-}" in
+        "")
+            usage
+            ;;
+        jump)
+            cat <<'EOF'
+j jump <alias>
+
+Cd to the directory saved under <alias>.
+Shortcut: j <alias>
+
+Resolution order: session alias > global alias.
+EOF
+            ;;
+        create)
+            cat <<'EOF'
+j create <alias> <path>
+j create -g <alias> <path>
+
+Save <path> as <alias>. Session-scoped by default.
+Use -g to create a global alias (persists across sessions).
+Creating a global alias removes any session alias with the same name.
+Shortcut: j [-g] <alias> <path>
+
+j -g <alias>
+
+Promote an existing session alias to global.
+EOF
+            ;;
+        ls)
+            cat <<'EOF'
+j ls
+
+List all aliases (both session and global).
+Shows type, name, and path in aligned columns.
+EOF
+            ;;
+        rm)
+            cat <<'EOF'
+j rm <alias>
+
+Remove an alias. Tries session first, then global.
+EOF
+            ;;
+        f)
+            cat <<'EOF'
+j f
+
+Move forward in history (if a forward path exists).
+Does not create a new history node.
+EOF
+            ;;
+        b)
+            cat <<'EOF'
+j b
+
+Move back in history to the previous location.
+Does not create a new history node.
+EOF
+            ;;
+        history)
+            cat <<'EOF'
+j history
+j history -g
+j history --graph
+
+Show cd history for the current session.
+Default: linear view (main path only).
+Use -g or --graph for a full branching graph view.
+EOF
+            ;;
+        clear)
+            cat <<'EOF'
+j clear
+
+Clear all session history data.
+EOF
+            ;;
+        init)
+            cat <<'EOF'
+j init
+
+Set up shell integration by adding a source line to your
+shell rc file (~/.bashrc, ~/.zshrc, or fish config).
+This enables the j function and automatic cd recording.
+EOF
+            ;;
+        deinit)
+            cat <<'EOF'
+j deinit
+
+Remove the shell integration source line from all rc files.
+EOF
+            ;;
+        activate)
+            cat <<'EOF'
+j activate
+
+Start recording cd history in the current session.
+Recording is active by default after init.
+EOF
+            ;;
+        deactivate)
+            cat <<'EOF'
+j deactivate
+
+Stop recording cd history in the current session.
+History can still be browsed with j b / j f.
+EOF
+            ;;
+        uninstall)
+            cat <<'EOF'
+j uninstall
+
+Remove shell integration and delete eason-jump scripts.
+Alias and history data are preserved.
+EOF
+            ;;
+        *)
+            echo "Unknown command: $1" >&2
+            echo "Run 'j help' for a list of commands." >&2
+            return 1
+            ;;
+    esac
+}
+
+ensure_data_dir
+
+# Parse -g flag
+_global=""
+if [ "${1:-}" = "-g" ]; then
+    _global="--global"
+    shift
+fi
+
+case "${1:-}" in
+    ""|--help|-h)
+        usage
+        ;;
+    help)
+        cmd_help "${2:-}"
+        ;;
+    init)
+        do_init
+        ;;
+    deinit)
+        do_deinit
+        ;;
+    ls)
+        alias_list "${2:-}"
+        ;;
+    rm)
+        if [ -z "${2:-}" ]; then
+            echo "error: missing alias name. See 'j help rm'." >&2
+            exit 1
+        fi
+        alias_rm "$2" "${3:-}"
+        ;;
+    jump)
+        if [ -z "${2:-}" ]; then
+            echo "error: missing alias name. See 'j help jump'." >&2
+            exit 1
+        fi
+        alias_get "$2" "${3:-}"
+        ;;
+    create)
+        if [ "$_global" = "--global" ] && [ -n "${2:-}" ] && [ -z "${3:-}" ]; then
+            # j create -g <alias> <sid> — but sid comes as $3 from shell func
+            # Handled via _promote instead
+            echo "error: missing path. See 'j help create'." >&2
+            exit 1
+        fi
+        if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
+            echo "error: missing arguments. See 'j help create'." >&2
+            exit 1
+        fi
+        alias_set "$2" "$3" "${4:-}" "$_global"
+        ;;
+    activate|deactivate)
+        echo "Run 'j $1' in your shell (not as a script)." >&2
+        exit 1
+        ;;
+    f)
+        history_forward "${2:-}"
+        ;;
+    b)
+        history_back "${2:-}"
+        ;;
+    history)
+        # Parse --graph / -g flag and --deactivated for history subcommand
+        _hmode="linear"
+        _hsid=""
+        _hdeact=""
+        shift
+        for _arg in "$@"; do
+            case "$_arg" in
+                -g|--graph) _hmode="graph" ;;
+                --deactivated) _hdeact="1" ;;
+                *) _hsid="$_arg" ;;
+            esac
+        done
+        if [ "$_hmode" = "graph" ]; then
+            history_graph "$_hsid" "$_hdeact"
+        else
+            history_linear "$_hsid" "$_hdeact"
+        fi
+        ;;
+    clear)
+        history_clear
+        ;;
+    uninstall)
+        do_uninstall
+        ;;
+    _record)
+        if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
+            exit 1
+        fi
+        history_push "$2" "$3"
+        ;;
+    _resolve)
+        if [ -z "${2:-}" ]; then
+            exit 1
+        fi
+        alias_get "$2" "${3:-}"
+        ;;
+    _promote)
+        if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
+            echo "error: missing alias name. See 'j help create'." >&2
+            exit 1
+        fi
+        alias_promote "$2" "$3"
+        ;;
+    *)
+        # Shortcut forms:
+        #   j [-g] <alias> <path>  → create
+        #   j <alias>              → jump (print path)
+        if [ -n "${2:-}" ]; then
+            alias_set "$1" "$2" "${3:-}" "$_global"
+        else
+            alias_get "$1" "${2:-}"
+        fi
+        ;;
+esac
