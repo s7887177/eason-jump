@@ -24,29 +24,36 @@ ensure_data_dir() {
 
 usage() {
     cat <<'EOF'
-eason-jump — quick directory navigation with aliases and history
-
 Usage:
-    j <alias>                     jump to alias
-    j [-g] <alias> <path>         create alias (-g for global)
-    j -g <alias>                  promote session alias to global
+  j COMMAND
+Aliases:
+  j <alias>               alias of `j jump <alias>`, jump to alias 
+  j [-g] <alias> <path>   alias of `j create [-g] <alias> <path>`, create alias
+  j -g <alias>            alias of `j create -g <alias>`, globalize session alias
 
-Commands:
-    help [COMMAND]       show help, or detailed help for COMMAND
-    jump <alias>         cd to the path of alias
-    create <alias> <path>
-                         save path as alias (session-scoped by default)
-    ls                   list all aliases
-    rm <alias>           remove an alias
-    f                    go forward in history
-    b                    go back in history
-    history              show cd history
-    clear                clear history
-    init                 set up shell integration
-    deinit               remove shell integration
-    activate             start recording history
-    deactivate           stop recording history
-    uninstall            remove eason-jump (keeps data)
+eason-jump — quick directory navigation with aliases and `cd` history
+
+Alias Commands:
+  create               create alias, or promote session alias to global
+  ls                   list all aliases
+  rm                   remove an alias
+  jump                 change directory to the path of alias
+
+History Command:
+  f                    go forward in history
+  b                    go backward in history
+  history              show history
+  clear                clear history
+
+Lifecycle Commands:
+  init                 set up shell integration
+  deinit               remove shell integration
+  activate             start recording history
+  deactivate           stop recording history
+  uninstall            remove eason-jump (keeps data)
+
+Other Commands:
+  help [COMMAND]       show help, or detailed help for COMMAND
 
 Use 'j help COMMAND' for detailed information.
 EOF
@@ -59,55 +66,58 @@ cmd_help() {
             ;;
         jump)
             cat <<'EOF'
-j jump <alias>
+Usage:
+  j jump <alias>
+Alias:
+  j <alias>
 
-Cd to the directory saved under <alias>.
-Shortcut: j <alias>
-
-Resolution order: session alias > global alias.
+Change directory to the path of the <alias>, if there are 2 alias with
+the same name, the seesional alias will be used.
 EOF
             ;;
         create)
             cat <<'EOF'
-j create <alias> <path>
-j create -g <alias> <path>
+Usage:
+  j create [-g] <alias> <path>
+  j -g <alias>
 
 Save <path> as <alias>. Session-scoped by default.
 Use -g to create a global alias (persists across sessions).
-Creating a global alias removes any session alias with the same name.
-Shortcut: j [-g] <alias> <path>
+if no <path>, must use `-g` flag, will promote sessional alias to global
 
-j -g <alias>
-
-Promote an existing session alias to global.
+Creating a global alias will override any sessional alias with the same 
+name. But not in reverse, sessional alias will not override global alias.
+they will be both saved. But sessional take precedent in current session.
 EOF
             ;;
         ls)
             cat <<'EOF'
-j ls
+Usage:
+  j ls
 
-List all aliases (both session and global).
-Shows type, name, and path in aligned columns.
+List all aliases.
 EOF
             ;;
         rm)
             cat <<'EOF'
-j rm <alias>
+Usage:
+  j rm <alias>
 
-Remove an alias. Tries session first, then global.
+Remove an alias. Tries sessional first, then global.
 EOF
             ;;
         f)
             cat <<'EOF'
-j f
-
+Usage:
+  j f
 Move forward in history (if a forward path exists).
 Does not create a new history node.
 EOF
             ;;
         b)
             cat <<'EOF'
-j b
+Usage:
+  j b
 
 Move back in history to the previous location.
 Does not create a new history node.
@@ -115,57 +125,62 @@ EOF
             ;;
         history)
             cat <<'EOF'
-j history
-j history -g
-j history --graph
+Usage:
+  j history [FLAG]
+Flags:
+  -g, --graph    show graph view.
 
-Show cd history for the current session.
-Default: linear view (main path only).
-Use -g or --graph for a full branching graph view.
+Show `cd` history for the current session.
 EOF
             ;;
         clear)
             cat <<'EOF'
-j clear
+Usage:
+  j clear
 
-Clear all session history data.
+Clear all `cd` history data.
 EOF
             ;;
         init)
             cat <<'EOF'
-j init
+Usage:
+  j init
 
 Set up shell integration by adding a source line to your
 shell rc file (~/.bashrc, ~/.zshrc, or fish config).
-This enables the j function and automatic cd recording.
+This enables the j function and automatic `cd` recording.
 EOF
             ;;
         deinit)
             cat <<'EOF'
-j deinit
+Usage:
+  j deinit
 
 Remove the shell integration source line from all rc files.
 EOF
             ;;
         activate)
             cat <<'EOF'
-j activate
+Usage:
+  j activate
 
-Start recording cd history in the current session.
+Start recording `cd` history in the current session.
 Recording is active by default after init.
 EOF
             ;;
         deactivate)
             cat <<'EOF'
-j deactivate
+Usage:
+  j deactivate
 
 Stop recording cd history in the current session.
-History can still be browsed with j b / j f.
+History can still be browsed with `j b`, `j f`.
 EOF
             ;;
         uninstall)
             cat <<'EOF'
-j uninstall
+Usage:
+  j uninstall
 
 Remove shell integration and delete eason-jump scripts.
 Alias and history data are preserved.
